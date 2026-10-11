@@ -8,7 +8,11 @@ import dev.ntfsfm.app.data.ActiveVolumesHolder
 import dev.ntfsfm.app.data.UsbVolumeState
 import dev.ntfsfm.app.data.VolumeRepository
 import javax.inject.Inject
+import dev.ntfsfm.core.data.dao.RecentLocationDao
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
@@ -28,11 +32,23 @@ data class StorageLocationUi(
     val isOpenable: Boolean get() = !needsPermission && unsupportedReason == null
 }
 
+/** A recently opened folder on a drive that is connected right now. */
+data class RecentFolderUi(val volumeId: String, val path: String, val name: String, val volumeName: String)
+
 @HiltViewModel
 class HomeViewModel @Inject constructor(
     private val volumeRepository: VolumeRepository,
     private val activeVolumes: ActiveVolumesHolder,
+    recentLocations: RecentLocationDao,
 ) : ViewModel() {
+    val recentFolders: StateFlow<List<RecentFolderUi>> =
+        combine(recentLocations.observeRecent(12), activeVolumes.volumes) { recents, volumes ->
+            recents.mapNotNull { r ->
+                val vfs = volumes[r.volumeId] ?: return@mapNotNull null
+                RecentFolderUi(r.volumeId, r.path, r.displayName, vfs.identity.displayName)
+            }.take(6)
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
     private val internalLocation = MutableStateFlow<StorageLocationUi?>(null)
     private val usbLocations = MutableStateFlow<List<StorageLocationUi>>(emptyList())
     private val _locations = MutableStateFlow<List<StorageLocationUi>>(emptyList())

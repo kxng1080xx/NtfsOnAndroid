@@ -18,12 +18,17 @@ import dev.ntfsfm.core.vfs.VirtualFileSystem
 import dev.ntfsfm.core.vfs.VolumeIdentity
 import javax.inject.Inject
 import javax.inject.Singleton
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
@@ -54,16 +59,22 @@ class VolumeRepository @Inject constructor(
     private val sessionLock = Mutex()
     private val refreshTrigger = MutableStateFlow(0)
 
-    fun internalStorageVolume(): VirtualFileSystem =
-        LocalVfs(Environment.getExternalStorageDirectory(), VolumeIdentity("internal-storage", "Internal storage"))
+    // Mounting lives here, not in a screen: plugging a drive in relaunches the activity, and
+    // that must not cancel an NTFS mount halfway through.
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
-    fun usbVolumeStates(): Flow<List<UsbVolumeState>> =
+    private val usbStates: StateFlow<List<UsbVolumeState>> =
         combine(usbManager.deviceListUpdates(), refreshTrigger) { devices, _ -> devices }
             .map { devices ->
                 closeSessionsForDetachedDevices(devices)
                 devices.flatMap { resolveDevice(it) }
             }
-            .flowOn(Dispatchers.IO)
+            .stateIn(scope, SharingStarted.Eagerly, emptyList())
+
+    fun internalStorageVolume(): VirtualFileSystem =
+        LocalVfs(Environment.getExternalStorageDirectory(), VolumeIdentity("internal-storage", "Internal storage"))
+
+    fun usbVolumeStates(): Flow<List<UsbVolumeState>> = usbStates
 
     suspend fun requestPermission(device: UsbDevice): Boolean {
         val granted = usbManager.requestPermission(device)
@@ -104,8 +115,16 @@ class VolumeRepository @Inject constructor(
                         dataPartitions.map { mountPartition(device, blockDevice, it, driveHasSeveralVolumes = dataPartitions.size > 1) }
                     }
                 }
-                sessions[device.deviceName] = DeviceSession(transport, blockDevice, result)
+                if (result.any { it is UsbVolumeState.Ready } || result.none { it is UsbVolumeState.Failed }) {
+                    sessions[device.deviceName] = DeviceSession(transport, blockDevice, result)
+                } else {
+                    // Nothing mounted: release the drive so Retry starts from scratch.
+                    runCatching { transport.close() }
+                }
                 result
+            } catch (e: CancellationException) {
+                runCatching { transport.close() }
+                throw e
             } catch (e: Exception) {
                 Log.w(TAG, "Failed to read ${device.deviceName}", e)
                 runCatching { transport.close() }
@@ -125,6 +144,8 @@ class VolumeRepository @Inject constructor(
                 else -> return UsbVolumeState.Unsupported(device, "$displayName has an unrecognized filesystem")
             }
             UsbVolumeState.Ready(device, vfs, volumeId, displayName)
+        } catch (e: CancellationException) {
+            throw e // never report a cancelled mount as a broken drive
         } catch (e: Exception) {
             Log.w(TAG, "Failed to mount partition ${partition.index} on ${device.deviceName}", e)
             UsbVolumeState.Failed(device, "Couldn't open $displayName: ${e.message ?: "unknown error"}")

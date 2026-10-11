@@ -1,6 +1,9 @@
 package dev.ntfsfm.app.ui.home
 
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -17,237 +20,278 @@ import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.ChevronRight
+import androidx.compose.material.icons.rounded.DarkMode
+import androidx.compose.material.icons.rounded.LightMode
 import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.PhoneAndroid
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Usb
-import androidx.compose.material.icons.rounded.WarningAmber
 import androidx.compose.material3.Button
-import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.ntfsfm.app.formatBytes
-import dev.ntfsfm.app.ui.design.SectionCard
+import dev.ntfsfm.app.ui.design.ContentCard
+import dev.ntfsfm.app.ui.design.RoundIconButton
 import dev.ntfsfm.app.ui.design.SectionHeader
+import dev.ntfsfm.app.ui.design.bottomClearance
+import dev.ntfsfm.app.ui.design.card
+import dev.ntfsfm.app.ui.files.FileCategory
 import dev.ntfsfm.app.ui.files.FileTypeBadge
 import dev.ntfsfm.app.ui.files.HomeCategory
 import dev.ntfsfm.app.ui.files.visualFor
 import dev.ntfsfm.app.ui.permission.rememberStorageAccess
+import dev.ntfsfm.app.ui.theme.LocalDarkTheme
+import dev.ntfsfm.app.ui.theme.LocalToggleDarkTheme
 
 @Composable
 fun HomeScreen(
     onOpenVolume: (volumeId: String) -> Unit,
+    onOpenFolder: (volumeId: String, path: String) -> Unit,
     onOpenCategory: (HomeCategory) -> Unit,
     onOpenSearch: () -> Unit,
     viewModel: HomeViewModel = hiltViewModel(),
 ) {
     val locations by viewModel.locations.collectAsStateWithLifecycle()
+    val recents by viewModel.recentFolders.collectAsStateWithLifecycle()
     val storageAccess = rememberStorageAccess()
 
-    LazyColumn(contentPadding = PaddingValues(bottom = 24.dp)) {
-        item(key = "header") { HomeHeader(onOpenSearch) }
+    LazyColumn(contentPadding = PaddingValues(bottom = bottomClearance())) {
+        item(key = "title") { Greeting(onOpenSearch) }
         if (!storageAccess.isGranted) {
             item(key = "storage-access") { StorageAccessCard(storageAccess.request) }
         }
-        item(key = "storage-header") { SectionHeader("Storage") }
-        items(locations, key = { it.volumeId }) { location ->
-            StorageLocationCard(
-                location = location,
-                enabled = location.isUsb || storageAccess.isGranted,
-                onOpen = { onOpenVolume(location.volumeId) },
-                onRequestPermission = { location.device?.let(viewModel::requestPermission) },
-                onRetry = viewModel::retry,
-            )
-            Spacer(Modifier.height(10.dp))
+        item(key = "drives") {
+            LazyRow(
+                contentPadding = PaddingValues(horizontal = 20.dp),
+                horizontalArrangement = Arrangement.spacedBy(14.dp),
+                modifier = Modifier.padding(top = 8.dp),
+            ) {
+                items(locations, key = { it.volumeId }) { location ->
+                    StorageHeroCard(
+                        location = location,
+                        enabled = location.isUsb || storageAccess.isGranted,
+                        onOpen = { onOpenVolume(location.volumeId) },
+                        onRequestPermission = { location.device?.let(viewModel::requestPermission) },
+                        onRetry = viewModel::retry,
+                        modifier = Modifier.fillParentMaxWidth(if (locations.size == 1) 1f else 0.86f),
+                    )
+                }
+            }
         }
         item(key = "categories-header") { SectionHeader("Categories") }
         item(key = "categories") { CategoryGrid(onOpenCategory) }
+        if (recents.isNotEmpty()) {
+            item(key = "recents-header") { SectionHeader("Recent folders") }
+            item(key = "recents") {
+                ContentCard {
+                    recents.forEachIndexed { index, recent ->
+                        RecentRow(recent) { onOpenFolder(recent.volumeId, recent.path) }
+                        if (index != recents.lastIndex) {
+                            HorizontalDivider(Modifier.padding(start = 76.dp, end = 20.dp), color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f))
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 
 @Composable
-private fun HomeHeader(onOpenSearch: () -> Unit) {
-    val scheme = MaterialTheme.colorScheme
-    Column(
-        Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(bottomStart = 32.dp, bottomEnd = 32.dp))
-            .background(Brush.linearGradient(listOf(scheme.primary, Color(0xFF7C3AED), scheme.secondary)))
-            .windowInsetsPadding(WindowInsets.statusBars)
-            .padding(horizontal = 20.dp, vertical = 24.dp),
-    ) {
-        Text("NTFS File Manager", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold, color = Color.White)
-        Text(
-            "Your phone and USB drives, all in one place",
-            style = MaterialTheme.typography.bodyMedium,
-            color = Color.White.copy(alpha = 0.85f),
-        )
-        Spacer(Modifier.height(20.dp))
-        Surface(
-            onClick = onOpenSearch,
-            shape = CircleShape,
-            color = Color.White.copy(alpha = 0.22f),
-            modifier = Modifier.fillMaxWidth(),
-        ) {
-            Row(Modifier.padding(horizontal = 18.dp, vertical = 14.dp), verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Rounded.Search, contentDescription = null, tint = Color.White)
-                Spacer(Modifier.width(12.dp))
-                Text("Search files and folders", color = Color.White, style = MaterialTheme.typography.bodyLarge)
+private fun Greeting(onOpenSearch: () -> Unit) {
+    val dark = LocalDarkTheme.current
+    Column(Modifier.windowInsetsPadding(WindowInsets.statusBars).padding(start = 24.dp, end = 20.dp, top = 20.dp)) {
+        Row(verticalAlignment = Alignment.Top) {
+            Column(Modifier.weight(1f)) {
+                Text("Let's manage", style = MaterialTheme.typography.headlineMedium)
+                Text("your files", style = MaterialTheme.typography.headlineMedium, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f))
             }
+            RoundIconButton(Icons.Rounded.Search, "Search", onOpenSearch)
+            Spacer(Modifier.width(10.dp))
+            RoundIconButton(if (dark) Icons.Rounded.LightMode else Icons.Rounded.DarkMode, if (dark) "Switch to light" else "Switch to dark", LocalToggleDarkTheme.current)
         }
+        Spacer(Modifier.height(12.dp))
     }
 }
 
 @Composable
 private fun StorageAccessCard(onAllow: () -> Unit) {
-    Spacer(Modifier.height(16.dp))
-    Surface(
-        Modifier.fillMaxWidth().padding(horizontal = 16.dp),
-        shape = MaterialTheme.shapes.large,
-        color = MaterialTheme.colorScheme.tertiaryContainer,
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 20.dp, vertical = 8.dp)
+            .card(MaterialTheme.shapes.large, tint = MaterialTheme.colorScheme.tertiary.copy(alpha = 0.10f))
+            .padding(16.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-            Icon(Icons.Rounded.Lock, contentDescription = null, tint = MaterialTheme.colorScheme.onTertiaryContainer)
-            Spacer(Modifier.width(14.dp))
-            Column(Modifier.weight(1f)) {
-                Text("Files are hidden", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onTertiaryContainer)
-                Text(
-                    "Allow access so you can browse phone storage and copy to and from USB drives.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onTertiaryContainer,
-                )
-            }
-            Spacer(Modifier.width(8.dp))
-            Button(onClick = onAllow) { Text("Allow") }
+        Box(Modifier.size(40.dp).clip(CircleShape).background(MaterialTheme.colorScheme.tertiary.copy(alpha = 0.15f)), contentAlignment = Alignment.Center) {
+            Icon(Icons.Rounded.Lock, contentDescription = null, tint = MaterialTheme.colorScheme.tertiary)
         }
+        Spacer(Modifier.width(14.dp))
+        Column(Modifier.weight(1f)) {
+            Text("Files are hidden", style = MaterialTheme.typography.titleSmall)
+            Text("Allow access to browse phone storage and copy to USB drives.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        Spacer(Modifier.width(8.dp))
+        Button(onClick = onAllow) { Text("Allow") }
     }
 }
 
+/** A bold gradient card per drive, like a bank card: name, usage, and a ring. */
 @Composable
-private fun StorageLocationCard(
+private fun StorageHeroCard(
     location: StorageLocationUi,
     enabled: Boolean,
     onOpen: () -> Unit,
     onRequestPermission: () -> Unit,
     onRetry: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
-    val accent = if (location.isUsb) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.primary
-    SectionCard {
-        Row(
-            Modifier
-                .fillMaxWidth()
-                .clickable(enabled = enabled && location.isOpenable, onClick = onOpen)
-                .padding(horizontal = 16.dp, vertical = 8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Box(
-                Modifier.size(48.dp).clip(MaterialTheme.shapes.medium).background(accent.copy(alpha = 0.16f)),
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(if (location.isUsb) Icons.Rounded.Usb else Icons.Rounded.PhoneAndroid, contentDescription = null, tint = accent)
+    val colors = if (location.isUsb) listOf(Color(0xFF0FA3A3), Color(0xFF2F7CF6)) else listOf(Color(0xFF3B5BFD), Color(0xFF7B61FF))
+    val shape = MaterialTheme.shapes.extraLarge
+    Column(
+        modifier
+            .height(184.dp)
+            .clip(shape)
+            .background(Brush.linearGradient(colors))
+            .background(Brush.radialGradient(listOf(Color.White.copy(alpha = 0.22f), Color.Transparent), center = Offset(80f, 0f), radius = 520f))
+            .border(1.dp, Brush.linearGradient(listOf(Color.White.copy(alpha = 0.45f), Color.White.copy(alpha = 0.05f))), shape)
+            .clickable(enabled = enabled && location.isOpenable, onClick = onOpen)
+            .padding(22.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(Modifier.size(36.dp).clip(CircleShape).background(Color.White.copy(alpha = 0.2f)), contentAlignment = Alignment.Center) {
+                Icon(if (location.isUsb) Icons.Rounded.Usb else Icons.Rounded.PhoneAndroid, null, tint = Color.White, modifier = Modifier.size(20.dp))
             }
-            Spacer(Modifier.width(14.dp))
-            Column(Modifier.weight(1f)) {
-                Text(location.displayName, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                when {
-                    location.needsPermission -> Text(
-                        "Allow access to open this drive",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    location.unsupportedReason != null -> Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Rounded.WarningAmber, null, Modifier.size(16.dp), tint = MaterialTheme.colorScheme.tertiary)
-                        Spacer(Modifier.width(4.dp))
-                        Text(location.unsupportedReason, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.tertiary)
-                    }
-                    location.totalBytes > 0 -> {
-                        Spacer(Modifier.height(8.dp))
-                        UsageBar(location.usedFraction, accent)
-                        Spacer(Modifier.height(4.dp))
-                        Text(
-                            "${formatBytes(location.usedBytes)} used of ${formatBytes(location.totalBytes)}",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
+            Spacer(Modifier.width(10.dp))
+            Text(location.displayName, style = MaterialTheme.typography.titleMedium, color = Color.White, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+        }
+        Spacer(Modifier.weight(1f))
+        when {
+            location.needsPermission -> HeroMessage("Allow access to open this drive", "Allow", onRequestPermission)
+            location.unsupportedReason != null -> HeroMessage(location.unsupportedReason, "Retry", onRetry)
+            !enabled -> HeroMessage("Allow file access to open phone storage", null, {})
+            location.totalBytes > 0 -> Row(verticalAlignment = Alignment.Bottom) {
+                Column(Modifier.weight(1f)) {
+                    Text(formatBytes(location.usedBytes), style = MaterialTheme.typography.headlineSmall, color = Color.White)
+                    Text("used of ${formatBytes(location.totalBytes)}", style = MaterialTheme.typography.bodySmall, color = Color.White.copy(alpha = 0.8f))
+                    Spacer(Modifier.height(10.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        LegendDot(Color.White)
+                        Text("Used", style = MaterialTheme.typography.labelSmall, color = Color.White.copy(alpha = 0.85f))
+                        Spacer(Modifier.width(12.dp))
+                        LegendDot(Color.White.copy(alpha = 0.35f))
+                        Text("Free ${formatBytes(location.totalBytes - location.usedBytes)}", style = MaterialTheme.typography.labelSmall, color = Color.White.copy(alpha = 0.85f))
                     }
                 }
-            }
-            when {
-                location.needsPermission -> FilledTonalButton(onClick = onRequestPermission) { Text("Allow") }
-                location.unsupportedReason != null -> TextButton(onClick = onRetry) { Text("Retry") }
-                enabled -> Icon(Icons.Rounded.ChevronRight, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                Box(contentAlignment = Alignment.Center) {
+                    UsageRing(location.usedFraction)
+                    Text("${(location.usedFraction * 100).toInt()}%", style = MaterialTheme.typography.titleMedium, color = Color.White)
+                }
             }
         }
     }
 }
 
 @Composable
-private fun UsageBar(fraction: Float, color: Color) {
-    Box(
-        Modifier.fillMaxWidth().height(8.dp).clip(CircleShape).background(MaterialTheme.colorScheme.surfaceContainerHighest),
-    ) {
-        Box(
-            Modifier
-                .fillMaxWidth(fraction.coerceAtLeast(0.02f))
-                .height(8.dp)
-                .clip(CircleShape)
-                .background(Brush.horizontalGradient(listOf(color, color.copy(alpha = 0.6f)))),
-        )
+private fun HeroMessage(text: String, action: String?, onAction: () -> Unit) {
+    Text(text, style = MaterialTheme.typography.bodyMedium, color = Color.White.copy(alpha = 0.9f), maxLines = 2, overflow = TextOverflow.Ellipsis)
+    if (action != null) {
+        Spacer(Modifier.height(8.dp))
+        Button(
+            onClick = onAction,
+            colors = ButtonDefaults.buttonColors(containerColor = Color.White, contentColor = Color(0xFF1F2A60)),
+            contentPadding = PaddingValues(horizontal = 18.dp, vertical = 6.dp),
+        ) { Text(action) }
+    }
+}
+
+@Composable
+private fun LegendDot(color: Color) {
+    Box(Modifier.padding(end = 6.dp).size(8.dp).clip(CircleShape).background(color))
+}
+
+@Composable
+private fun UsageRing(fraction: Float) {
+    val animated by animateFloatAsState(fraction, label = "usage")
+    Canvas(Modifier.size(76.dp)) {
+        val stroke = 8.dp.toPx()
+        val inset = stroke / 2
+        val arcSize = Size(size.width - stroke, size.height - stroke)
+        drawArc(Color.White.copy(alpha = 0.25f), 0f, 360f, false, Offset(inset, inset), arcSize, style = Stroke(stroke))
+        drawArc(Color.White, -90f, 360f * animated, false, Offset(inset, inset), arcSize, style = Stroke(stroke, cap = StrokeCap.Round))
     }
 }
 
 @Composable
 private fun CategoryGrid(onOpenCategory: (HomeCategory) -> Unit) {
-    Column(Modifier.padding(horizontal = 12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    Column(Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
         HomeCategory.entries.chunked(4).forEach { row ->
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                row.forEach { category ->
-                    CategoryTile(category, Modifier.weight(1f)) { onOpenCategory(category) }
-                }
+            Row {
+                row.forEach { category -> CategoryTile(category, Modifier.weight(1f)) { onOpenCategory(category) } }
                 repeat(4 - row.size) { Spacer(Modifier.weight(1f)) }
             }
         }
     }
 }
 
+/** Icon in a soft rounded square with the label underneath, as in the reference designs. */
 @Composable
 private fun CategoryTile(category: HomeCategory, modifier: Modifier, onClick: () -> Unit) {
     val visual = visualFor(category)
     Column(
-        modifier
-            .clip(MaterialTheme.shapes.large)
-            .background(visual.container)
-            .clickable(onClick = onClick)
-            .padding(vertical = 14.dp, horizontal = 4.dp),
+        modifier.clip(MaterialTheme.shapes.medium).clickable(onClick = onClick).padding(vertical = 4.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        FileTypeBadge(visual.copy(container = MaterialTheme.colorScheme.surface), size = 44.dp)
+        Box(Modifier.size(64.dp).card(MaterialTheme.shapes.large, elevation = 1.3f), contentAlignment = Alignment.Center) {
+            Icon(visual.icon, null, tint = visual.tint, modifier = Modifier.size(30.dp))
+        }
         Spacer(Modifier.height(8.dp))
-        Text(
-            category.label,
-            style = MaterialTheme.typography.labelMedium,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
+        Text(category.label, style = MaterialTheme.typography.labelMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+    }
+}
+
+@Composable
+private fun RecentRow(recent: RecentFolderUi, onClick: () -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 16.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        FileTypeBadge(visualFor(FileCategory.FOLDER))
+        Spacer(Modifier.width(16.dp))
+        Column(Modifier.weight(1f)) {
+            Text(recent.name, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(
+                listOf(recent.volumeName, recent.path.substringBeforeLast('/', "")).filter { it.isNotEmpty() }.joinToString(" › "),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        Icon(Icons.Rounded.ChevronRight, null, tint = MaterialTheme.colorScheme.outline)
     }
 }

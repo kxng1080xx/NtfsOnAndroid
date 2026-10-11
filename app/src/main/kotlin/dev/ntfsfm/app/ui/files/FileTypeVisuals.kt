@@ -1,6 +1,6 @@
 package dev.ntfsfm.app.ui.files
 
-import androidx.compose.foundation.isSystemInDarkTheme
+import dev.ntfsfm.app.ui.theme.LocalDarkTheme
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Android
 import androidx.compose.material.icons.rounded.Code
@@ -55,7 +55,7 @@ fun visualFor(name: String, isDirectory: Boolean): FileVisual = visualFor(catego
 
 @Composable
 fun visualFor(category: FileCategory): FileVisual {
-    val dark = isSystemInDarkTheme()
+    val dark = LocalDarkTheme.current
     return when (category) {
         FileCategory.FOLDER -> visual(Icons.Rounded.Folder, Color(0xFFF5A524), dark)
         FileCategory.IMAGE -> visual(Icons.Rounded.Image, Color(0xFFEC4899), dark)
@@ -100,7 +100,7 @@ fun visualFor(category: HomeCategory): FileVisual = when (category) {
     HomeCategory.VIDEOS -> visualFor(FileCategory.VIDEO)
     HomeCategory.AUDIO -> visualFor(FileCategory.AUDIO)
     HomeCategory.DOCUMENTS -> visualFor(FileCategory.DOCUMENT)
-    HomeCategory.DOWNLOADS -> visual(Icons.Rounded.Download, Color(0xFF14B8A6), isSystemInDarkTheme())
+    HomeCategory.DOWNLOADS -> visual(Icons.Rounded.Download, Color(0xFF14B8A6), LocalDarkTheme.current)
     HomeCategory.APPS -> visualFor(FileCategory.APP)
     HomeCategory.ARCHIVES -> visualFor(FileCategory.ARCHIVE)
 }

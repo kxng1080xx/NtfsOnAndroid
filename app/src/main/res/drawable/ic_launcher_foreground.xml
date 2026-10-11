@@ -1,13 +1,24 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- A folder with a small drive on its front: files on your USB drives. Fits the 66dp safe zone. -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
-    android:height="108dp"
     android:width="108dp"
+    android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
+    <!-- back of the folder, with its tab -->
     <path
-        android:fillColor="#cae9ff"
-        android:pathData="M30,40 L46,40 L52,48 L78,48 L78,74 L30,74 Z"/>
+        android:fillColor="#FFFFFF"
+        android:fillAlpha="0.55"
+        android:pathData="M33,35 L47,35 Q49.5,35 51,36.6 L54.4,40 L75,40 Q80,40 80,45 L80,70 Q80,75 75,75 L33,75 Q28,75 28,70 L28,40 Q28,35 33,35 Z" />
+    <!-- front of the folder -->
     <path
-        android:fillColor="#5fa8d3"
-        android:pathData="M30,48 L78,48 L78,74 L30,74 Z"/>
+        android:fillColor="#FFFFFF"
+        android:pathData="M28,50 Q28,45.5 32.5,45.5 L75.5,45.5 Q80,45.5 80,50 L80,70 Q80,75 75,75 L33,75 Q28,75 28,70 Z" />
+    <!-- the drive -->
+    <path
+        android:fillColor="#3B5BFD"
+        android:pathData="M42,58 L66,58 Q69.5,58 69.5,61.5 Q69.5,65 66,65 L42,65 Q38.5,65 38.5,61.5 Q38.5,58 42,58 Z" />
+    <path
+        android:fillColor="#5FD8D2"
+        android:pathData="M63,61.5 m-1.8,0 a1.8,1.8 0 1,0 3.6,0 a1.8,1.8 0 1,0 -3.6,0" />
 </vector>

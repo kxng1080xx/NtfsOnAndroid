@@ -3,6 +3,7 @@ package dev.ntfsfm.app.service
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
 import android.content.Intent
@@ -12,7 +13,9 @@ import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
 import dagger.hilt.android.AndroidEntryPoint
+import dev.ntfsfm.app.MainActivity
 import dev.ntfsfm.app.R
+import dev.ntfsfm.app.formatSpeed
 import dev.ntfsfm.app.data.ActiveVolumesHolder
 import dev.ntfsfm.core.block.BlockDeviceRemovedException
 import dev.ntfsfm.core.transfer.ConflictPolicy
@@ -44,13 +47,22 @@ class TransferForegroundService : Service() {
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private var transferJob: Job? = null
     private var wakeLock: PowerManager.WakeLock? = null
+    private var lastNotified = 0L
 
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        if (intent?.action == ACTION_CANCEL) {
-            transferJob?.cancel()
-            return START_NOT_STICKY
+        when (intent?.action) {
+            ACTION_CANCEL -> {
+                transferJob?.cancel()
+                return START_NOT_STICKY
+            }
+            ACTION_PAUSE, ACTION_RESUME -> {
+                if (intent.action == ACTION_PAUSE) transferState.pause() else transferState.resume()
+                // A paused copy emits nothing, so refresh the buttons right away.
+                transferState.progress.value?.let { if (!it.isDone) notify(buildNotification(it)) }
+                return START_NOT_STICKY
+            }
         }
         if (intent != null && transferJob?.isActive != true) startTransfer(intent)
         return START_NOT_STICKY
@@ -88,7 +100,12 @@ class TransferForegroundService : Service() {
                 val item = progress.currentItem
                 if (item != null && item.state == ItemState.FAILED) Log.w(TAG, "item failed: ${item.sourcePath} -- ${item.error}")
                 transferState.update(progress)
-                updateNotification(progress)
+                // Android drops notification updates that come too fast; once a second is plenty.
+                val now = System.currentTimeMillis()
+                if (!progress.isDone && now - lastNotified >= 1000) {
+                    lastNotified = now
+                    notify(buildNotification(progress))
+                }
             }
         } catch (e: CancellationException) {
             transferState.update(lastProgress().copy(isDone = true, wasCancelled = true))
@@ -130,25 +147,48 @@ class TransferForegroundService : Service() {
     }
 
     private fun buildNotification(progress: TransferProgress?): Notification {
+        val paused = transferState.isPaused.value
         val builder = NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_transfer_notification)
             .setOngoing(true)
             .setOnlyAlertOnce(true)
+            .setContentIntent(openAppIntent())
         if (progress == null || progress.bytesTotal <= 0) {
-            builder.setContentTitle("Preparing transfer").setProgress(0, 0, true)
+            builder.setContentTitle("Preparing copy").setProgress(0, 0, true)
         } else {
             val percent = (progress.bytesTransferred * 100 / progress.bytesTotal).toInt()
+            val speed = if (paused) "Paused" else formatSpeed(progress.throughputBytesPerSecond)
             builder.setContentTitle(progress.currentItem?.displayName ?: "Copying")
-                .setContentText("$percent% - ${progress.itemsCompleted}/${progress.itemsTotal} items")
+                .setContentText("${progress.filesCompleted} / ${progress.filesTotal} files · $speed")
+                .setSubText("$percent%")
                 .setProgress(100, percent, false)
         }
+        builder.addAction(
+            0,
+            if (paused) "Resume" else "Pause",
+            serviceIntent(if (paused) ACTION_RESUME else ACTION_PAUSE, requestCode = 1),
+        )
+        builder.addAction(0, "Cancel", serviceIntent(ACTION_CANCEL, requestCode = 2))
         return builder.build()
     }
 
-    private fun updateNotification(progress: TransferProgress) {
-        if (progress.isDone) return
-        getSystemService(NotificationManager::class.java).notify(NOTIFICATION_ID, buildNotification(progress))
+    private fun notify(notification: Notification) {
+        getSystemService(NotificationManager::class.java).notify(NOTIFICATION_ID, notification)
     }
+
+    private fun serviceIntent(action: String, requestCode: Int): PendingIntent = PendingIntent.getService(
+        this,
+        requestCode,
+        Intent(this, TransferForegroundService::class.java).setAction(action),
+        PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+    )
+
+    private fun openAppIntent(): PendingIntent = PendingIntent.getActivity(
+        this,
+        0,
+        Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP),
+        PendingIntent.FLAG_IMMUTABLE,
+    )
 
     override fun onDestroy() {
         super.onDestroy()
@@ -158,6 +198,8 @@ class TransferForegroundService : Service() {
 
     companion object {
         const val ACTION_CANCEL = "dev.ntfsfm.app.action.CANCEL_TRANSFER"
+        const val ACTION_PAUSE = "dev.ntfsfm.app.action.PAUSE_TRANSFER"
+        const val ACTION_RESUME = "dev.ntfsfm.app.action.RESUME_TRANSFER"
         const val EXTRA_SOURCE_VOLUME_ID = "source_volume_id"
         const val EXTRA_SOURCE_PATHS = "source_paths"
         const val EXTRA_DEST_VOLUME_ID = "dest_volume_id"

@@ -39,6 +39,7 @@ dependencies {
     implementation(project(":core:fat32"))
     implementation(project(":core:transfer"))
     implementation(project(":core:data"))
+    implementation(project(":core:network"))
 
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.activity.compose)

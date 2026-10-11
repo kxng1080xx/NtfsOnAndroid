@@ -42,9 +42,16 @@ class SearchViewModel @Inject constructor(private val activeVolumes: ActiveVolum
         runSearch(query, _uiState.value.category)
     }
 
-    fun setCategory(category: HomeCategory) {
-        _uiState.update { it.copy(query = "", category = category) }
-        runSearch("", category)
+    /** null = all types; keeps the typed query. */
+    fun setCategory(category: HomeCategory?) {
+        _uiState.update { it.copy(category = category) }
+        val query = _uiState.value.query
+        if (category == null && query.isBlank()) {
+            searchJob?.cancel()
+            _uiState.update { it.copy(results = emptyList(), isSearching = false, hasSearched = false) }
+        } else {
+            runSearch(query, category)
+        }
     }
 
     fun clear() {

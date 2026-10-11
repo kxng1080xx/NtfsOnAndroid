@@ -52,6 +52,9 @@ interface RecentLocationDao {
     @Upsert
     suspend fun upsert(location: RecentLocationEntity)
 
+    @Query("DELETE FROM recent_locations WHERE volumeId = :volumeId AND path = :path")
+    suspend fun deleteLocation(volumeId: String, path: String)
+
     @Query("DELETE FROM recent_locations WHERE id NOT IN (SELECT id FROM recent_locations ORDER BY lastAccessedAt DESC LIMIT :keep)")
     suspend fun trimTo(keep: Int)
 }

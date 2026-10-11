@@ -3,6 +3,8 @@
 
     <uses-feature android:name="android.hardware.usb.host" android:required="true" />
 
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="29" />
@@ -34,6 +36,12 @@
                 android:name="android.hardware.usb.action.USB_DEVICE_ATTACHED"
                 android:resource="@xml/usb_device_filter" />
         </activity>
+
+        <provider
+            android:name=".files.VfsContentProvider"
+            android:authorities="dev.ntfsfm.app.files"
+            android:exported="false"
+            android:grantUriPermissions="true" />
 
         <service
             android:name=".service.TransferForegroundService"

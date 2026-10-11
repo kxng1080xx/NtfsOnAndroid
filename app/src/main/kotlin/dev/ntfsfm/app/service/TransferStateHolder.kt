@@ -28,10 +28,23 @@ class TransferStateHolder @Inject constructor() {
     private val _isPaused = MutableStateFlow(false)
     val isPaused: StateFlow<Boolean> = _isPaused.asStateFlow()
 
+    /** The panel was sent to the background; a small pill and the notification remain. */
+    private val _isHidden = MutableStateFlow(false)
+    val isHidden: StateFlow<Boolean> = _isHidden.asStateFlow()
+
     fun start(controller: TransferController) {
         this.controller = controller
         _isPaused.value = false
+        _isHidden.value = false
         _progress.value = null
+    }
+
+    fun hide() {
+        _isHidden.value = true
+    }
+
+    fun show() {
+        _isHidden.value = false
     }
 
     fun update(progress: TransferProgress) {
@@ -41,6 +54,7 @@ class TransferStateHolder @Inject constructor() {
     fun finish() {
         controller = null
         _isPaused.value = false
+        _isHidden.value = false // bring the result back into view
     }
 
     fun dismiss() {

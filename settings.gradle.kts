@@ -22,4 +22,5 @@ include(
     ":core:fat32",
     ":core:transfer",
     ":core:data",
+    ":core:network",
 )

@@ -36,8 +36,14 @@ class TransferEngine {
         val plan = planTransfer(source, sourcePaths)
         val bytesTotal = plan.sumOf { if (it.entry.isDirectory) 0L else it.entry.sizeBytes }
         val itemsTotal = plan.size
-        val startTime = System.currentTimeMillis()
+        val filesTotal = plan.count { !it.entry.isDirectory }
+        var filesCompleted = 0
         var lastEmit = 0L
+        // Speed = exponential moving average of the rate between samples, so it tracks the
+        // current file rather than averaging in the planning time and earlier files.
+        var speedSampleTime = System.currentTimeMillis()
+        var speedSampleBytes = 0L
+        var speed = 0.0
         val sameVolume = source.identity.volumeId == dest.identity.volumeId
         var effectivePolicy = conflictPolicy
         var bytesTransferred = 0L
@@ -48,17 +54,29 @@ class TransferEngine {
         // Top-level items moved with one rename; their children need no work.
         val movedInPlace = mutableSetOf<String>()
 
-        fun progress(item: TransferItemProgress?, isDone: Boolean = false, fatalError: String? = null) = TransferProgress(
+        fun progress(item: TransferItemProgress?, isDone: Boolean = false, fatalError: String? = null): TransferProgress {
+            val now = System.currentTimeMillis()
+            val dt = now - speedSampleTime
+            if (dt >= 250) {
+                val instant = (bytesTransferred - speedSampleBytes) * 1000.0 / dt
+                speed = if (speed == 0.0) instant else speed * 0.6 + instant * 0.4
+                speedSampleTime = now
+                speedSampleBytes = bytesTransferred
+            }
+            return TransferProgress(
             itemsCompleted = itemsCompleted,
             itemsTotal = itemsTotal,
             bytesTransferred = bytesTransferred,
             bytesTotal = bytesTotal,
-            throughputBytesPerSecond = bytesTransferred * 1000 / (System.currentTimeMillis() - startTime).coerceAtLeast(1),
+            throughputBytesPerSecond = speed.toLong(),
             currentItem = item,
             isDone = isDone,
             fatalError = fatalError,
             itemsFailed = itemsFailed,
-        )
+            filesCompleted = filesCompleted,
+            filesTotal = filesTotal,
+            )
+        }
 
         for (planItem in plan) {
             currentCoroutineContext().ensureActive()
@@ -124,6 +142,7 @@ class TransferEngine {
                 failedTopLevelPaths += planItem.topLevelPath
             }
             itemsCompleted++
+            if (!entry.isDirectory) filesCompleted++
             val now = System.currentTimeMillis()
             if (now - lastEmit >= PROGRESS_EMIT_INTERVAL_MS || itemsCompleted == itemsTotal || itemState == ItemState.FAILED) {
                 lastEmit = now

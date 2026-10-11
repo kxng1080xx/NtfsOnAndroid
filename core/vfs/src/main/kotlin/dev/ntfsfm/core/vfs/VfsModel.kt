@@ -31,7 +31,7 @@ sealed class VfsException(message: String, cause: Throwable? = null) : Exception
     class NotFound(path: String) : VfsException("Not found: $path")
     class AlreadyExists(path: String) : VfsException("Already exists: $path")
     class ReadOnly(path: String) : VfsException("Read-only: $path")
-    class VolumeUnavailable(volumeId: String) : VfsException("Volume unavailable (disconnected): $volumeId")
+    class VolumeUnavailable(volumeId: String, cause: Throwable? = null) : VfsException("Volume unavailable (disconnected): $volumeId", cause)
     class NameNotSupported(name: String, reason: String) : VfsException("'$name' is not a valid name here: $reason")
     class Io(message: String, cause: Throwable? = null) : VfsException(message, cause)
 }

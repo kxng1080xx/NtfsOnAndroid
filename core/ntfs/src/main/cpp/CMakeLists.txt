@@ -33,3 +33,5 @@ target_compile_options(ntfsbridge PRIVATE
     -Wno-deprecated-non-prototype -Wno-unused-but-set-variable -Wno-address-of-packed-member
 )
 target_link_libraries(ntfsbridge log)
+# 16 KB page devices (Android 15+) refuse to load libraries aligned for 4 KB pages.
+target_link_options(ntfsbridge PRIVATE "-Wl,-z,max-page-size=16384")

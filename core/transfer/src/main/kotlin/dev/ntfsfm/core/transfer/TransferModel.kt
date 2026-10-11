@@ -30,12 +30,16 @@ data class TransferProgress(
     val itemsTotal: Int,
     val bytesTransferred: Long,
     val bytesTotal: Long,
+    /** Recent copy speed (smoothed over the last few seconds), not the whole-run average. */
     val throughputBytesPerSecond: Long,
     val currentItem: TransferItemProgress?,
     val isDone: Boolean = false,
     val wasCancelled: Boolean = false,
     val fatalError: String? = null,
     val itemsFailed: Int = 0,
+    /** Files only (folders excluded), for "10 / 110 files". */
+    val filesCompleted: Int = 0,
+    val filesTotal: Int = 0,
 )
 
 class TransferCancelledException : Exception("Transfer was cancelled")
